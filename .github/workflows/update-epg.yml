@@ -1,0 +1,30 @@
+name: Update EPG
+on:
+  schedule:
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build EPG with playlist-compatible channel IDs
+        run: |
+          curl -fsSL --retry 3 https://iptv-epg.org/files/epg-it.xml -o src.xml
+          python3 remap_epg.py src.xml ids.txt epg_it.xml
+          n=$(grep -c '<programme ' epg_it.xml || true)
+          echo "programmes: $n"
+          test "$n" -ge 5000
+          mkdir out
+          gzip -9 -c epg_it.xml > out/epg_it.xml.gz
+      - name: Publish to epg branch (single commit, history replaced)
+        run: |
+          cd out
+          git init -q -b epg
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add epg_it.xml.gz
+          git commit -q -m "EPG $(date -u +%F)"
+          git push -q --force "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" epg
